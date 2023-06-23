@@ -1,0 +1,16 @@
+{
+  "toggle_front_driver_door": "Porta do motorista dianteira",
+  "toggle_front_passenger_door": "Porta do passageiro dianteira",
+  "toggle_rear_driver_door": "Porta do motorista traseira",
+  "toggle_rear_passenger_door": "Porta do passageiro traseira",
+  "toggle_hood": "Capô",
+  "toggle_trunk": "Porta-malas",
+  "debug_box": "(Depurar) Caixa",
+  "debug_sphere": "(Depurar) Esfera",
+  "debug_police_car": "Carro de polícia",
+  "debug_ped": "(Depurar) Pedestre",
+  "debug_vehicle": "(Depurar) Veículo",
+  "debug_object": "(Depurar) Objeto",
+  "toggle_targeting": "Ativar Targeting",
+  "go_back": "Voltar"
+}
