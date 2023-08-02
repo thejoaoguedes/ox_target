@@ -11,15 +11,7 @@ require 'client.defaults'
 require 'client.compat.qtarget'
 require 'client.compat.qb-target'
 
-if utils.hasExport('ox_core.GetPlayerData') then
-    require 'client.framework.ox'
-elseif utils.hasExport('es_extended.getSharedObject') then
-    require 'client.framework.esx'
-elseif utils.hasExport('qb-core.GetCoreObject') then
-    require 'client.framework.qb'
-end
-
-local raycastFromCamera, getNearbyZones, drawZoneSprites, getCurrentZone, hasPlayerGotItems, hasPlayerGotGroup in utils
+local raycastFromCamera, getNearbyZones, drawZoneSprites in utils
 local SendNuiMessage = SendNuiMessage
 local GetEntityCoords = GetEntityCoords
 local GetEntityType = GetEntityType
@@ -35,6 +27,7 @@ local options = {}
 local currentTarget = {}
 local currentMenu
 local menuHistory = {}
+local nearbyZones
 
 -- Toggle ox_target, instead of holding the hotkey
 local toggleHotkey = GetConvarInt('ox_target:toggleHotkey', 0) == 1
@@ -54,11 +47,11 @@ local function shouldHide(option, distance, entityHit, endCoords)
         return true
     end
 
-    if option.groups and not hasPlayerGotGroup(option.groups) then
+    if option.groups and not utils.hasPlayerGotGroup(option.groups) then
         return true
     end
 
-    if option.items and not hasPlayerGotItems(option.items, option.anyItem) then
+    if option.items and not utils.hasPlayerGotItems(option.items, option.anyItem) then
         return true
     end
 
@@ -111,9 +104,15 @@ local function startTargeting()
     state.setActive(true)
 
     local flag = 511
-    local hit, entityHit, endCoords, distance, currentZone, nearbyZones, lastEntity, entityType, entityModel, hasTick, hasTarget
+    local hit, entityHit, endCoords, distance, lastEntity, entityType, entityModel, hasTick, hasTarget, zonesChanged
+    local zones = {}
 
     while state.isActive() do
+        if not state.isNuiFocused() and lib.progressActive() then
+            state.setActive(false)
+            break
+        end
+
         local playerCoords = GetEntityCoords(cache.ped)
         hit, entityHit, endCoords = raycastFromCamera(flag)
         distance = #(playerCoords - endCoords)
@@ -140,15 +139,9 @@ local function startTargeting()
 
         if hit and distance < 7 then
             local newOptions
-            local lastZone = currentZone
+            nearbyZones, zonesChanged = getNearbyZones(endCoords)
 
-            if getNearbyZones then
-                nearbyZones, currentZone = getNearbyZones(endCoords)
-            else
-                currentZone = getCurrentZone(endCoords)
-            end
-
-            if lastZone ~= currentZone or entityHit ~= lastEntity then
+            if entityHit ~= lastEntity then
                 currentMenu = nil
 
                 if next(options) then
@@ -182,19 +175,7 @@ local function startTargeting()
 
             ---@type table<string, TargetOptions[]>
             options = newOptions or options or {}
-
-            if currentZone then
-                if (not newOptions and currentZone.id ~= currentTarget?.zone) or (lastEntity ~= entityHit) then
-                    newOptions = options
-                end
-
-                currentTarget.zone = currentZone.id
-                options.zone = currentZone.options
-            elseif currentTarget.zone then
-                currentTarget.zone = nil
-                options.zone = nil
-            end
-
+            newOptions = (newOptions or zonesChanged or entityHit ~= lastEntity) and true
             lastEntity = entityHit
             currentTarget.entity = entityHit
             currentTarget.coords = endCoords
@@ -212,20 +193,35 @@ local function startTargeting()
 
                     if option.hide ~= hide then
                         option.hide = hide
-
-                        if not newOptions then
-                            newOptions = options
-                        end
+                        newOptions = true
                     end
 
                     if hide then hidden += 1 end
                 end
             end
 
+            if zonesChanged then table.wipe(zones) end
 
-            if newOptions and next(newOptions) then
-                options = newOptions
+            for i = 1, #nearbyZones do
+                local zoneOptions = nearbyZones[i].options
+                local optionCount = #zoneOptions
+                totalOptions += optionCount
+                zones[i] = zoneOptions
 
+                for j = 1, optionCount do
+                    local option = zoneOptions[j]
+                    local hide = shouldHide(option, distance, entityHit, endCoords)
+
+                    if option.hide ~= hide then
+                        option.hide = hide
+                        newOptions = true
+                    end
+
+                    if hide then hidden += 1 end
+                end
+            end
+
+            if newOptions then
                 if hidden == totalOptions then
                     hasTarget = false
                     SendNuiMessage('{"event": "leftTarget"}')
@@ -247,7 +243,8 @@ local function startTargeting()
 
                     SendNuiMessage(json.encode({
                         event = 'setTarget',
-                        options = options
+                        options = options,
+                        zones = zones,
                     }, { sort_keys=true }))
                 end
             end
@@ -282,10 +279,7 @@ local function startTargeting()
                         DrawMarker(28, endCoords.x, endCoords.y, endCoords.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.2, 0.2, 255, 42, 24, 100, false, false, 0, true, false, false, false)
                     end
 
-                    if nearbyZones then
-                        drawZoneSprites(dict, texture)
-                    end
-
+                    drawZoneSprites(dict, texture)
                     DisablePlayerFiring(cache.playerId, true)
                     DisableControlAction(0, 25, true)
                     DisableControlAction(0, 140, true)
@@ -325,10 +319,12 @@ local function startTargeting()
     SendNuiMessage('{"event": "visible", "state": false}')
     table.wipe(currentTarget)
     table.wipe(options)
+
+    if nearbyZones then table.wipe(nearbyZones) end
 end
 
 do
-    ---@type CKeybind
+    ---@type KeybindProps
     local keybind = {
         name = 'ox_target',
         defaultKey = GetConvar('ox_target:defaultHotkey', 'LMENU'),
@@ -386,8 +382,10 @@ end
 RegisterNUICallback('select', function(data, cb)
     cb(1)
 
+    local zone = data[3] and nearbyZones[data[3]]
+
     ---@type TargetOptions?
-    local option = options?[data[1]][data[2]]
+    local option = zone and zone.options[data[2]] or options[data[1]][data[2]]
 
     if option then
         if option.openMenu then
@@ -420,6 +418,8 @@ RegisterNUICallback('select', function(data, cb)
         elseif option.command then
             ExecuteCommand(option.command)
         end
+
+        if option.menuName == 'home' then return end
     end
 
     if not option?.openMenu and IsNuiFocused() then

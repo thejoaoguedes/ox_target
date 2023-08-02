@@ -132,6 +132,8 @@ local function convert(options)
     return options
 end
 
+local api = require 'client.api'
+
 exportHandler('AddBoxZone', function(name, center, length, width, options, targetoptions)
     local z = center.z
 
@@ -140,15 +142,14 @@ exportHandler('AddBoxZone', function(name, center, length, width, options, targe
         center = vec3(center.x, center.y, z)
     end
 
-    return lib.zones.box({
+    return api.addBoxZone({
         name = name,
         coords = center,
         size = vec3(width, length, (options.useZ or not options.maxZ) and center.z or math.abs(options.maxZ - options.minZ)),
         debug = options.debugPoly,
         rotation = options.heading,
         options = convert(targetoptions),
-        resource = GetInvokingResource(),
-    }).id
+    })
 end)
 
 exportHandler('AddPolyZone', function(name, points, options, targetoptions)
@@ -160,14 +161,13 @@ exportHandler('AddPolyZone', function(name, points, options, targetoptions)
         newPoints[i] = vec3(point.x, point.y, options.maxZ - (thickness / 2))
     end
 
-    return lib.zones.poly({
+    return api.addPolyZone({
         name = name,
         points = newPoints,
         thickness = thickness,
         debug = options.debugPoly,
         options = convert(targetoptions),
-        resource = GetInvokingResource(),
-    }).id
+    })
 end)
 
 exportHandler('AddEntityZone', function(name, entity, radius, options, targetoptions)
@@ -184,30 +184,17 @@ exportHandler('AddEntityZone', function(name, entity, radius, options, targetopt
 end)
 
 exportHandler('AddCircleZone', function(name, center, radius, options, targetoptions)
-    return lib.zones.sphere({
+    return api.addSphereZone({
         name = name,
         coords = center,
         radius = radius,
         debug = options.debugPoly,
         options = convert(targetoptions),
-        resource = GetInvokingResource(),
-    }).id
+    })
 end)
 
 exportHandler('RemoveZone', function(id)
-    if Zones then
-        if type(id) == 'string' then
-            for _, v in pairs(Zones) do
-                if v.name == id then
-                    v:remove()
-                end
-            end
-        end
-
-        if Zones[id] then
-            Zones[id]:remove()
-        end
-    end
+    api.removeZone(id, true)
 end)
 
 exportHandler('AddTargetBone', function(bones, options)

@@ -8,13 +8,13 @@
 ---@field groups? string | string[] | table<string, number>
 ---@field items? string | string[] | table<string, number>
 ---@field anyItem? boolean
----@field canInteract fun(entity?: number, distance: number, coords: vector3, name?: string, bone?: number): boolean?
+---@field canInteract? fun(entity?: number, distance: number, coords: vector3, name?: string, bone?: number): boolean?
 ---@field onSelect? fun(data: TargetOptions | number)
 ---@field export? string
 ---@field event? string
 ---@field serverEvent? string
 ---@field command? string
----@field resource string
+---@field resource? string
 ---@field openMenu? string
 ---@field menuName? string
 ---@field [string] any
@@ -47,15 +47,29 @@ function api.addSphereZone(data)
     return lib.zones.sphere(data).id
 end
 
----@param id number
-function api.removeZone(id)
-    local zone = Zones?[id]
+---@param id number | string
+---@param suppressWarning boolean?
+function api.removeZone(id, suppressWarning)
+    if Zones then
+        if type(id) == 'string' then
+            local foundZone
 
-    if not zone then
-        return warn(('attempted to remove a zone that does not exists (id: %s)'):format(id))
+            for _, v in pairs(Zones) do
+                if v.name == id then
+                    foundZone = true
+                    v:remove()
+                end
+            end
+
+            if foundZone then return end
+        elseif Zones[id] then
+            return Zones[id]:remove()
+        end
     end
 
-    zone:remove()
+    if suppressWarning then return end
+
+    warn(('attempted to remove a zone that does not exist (id: %s)'):format(id))
 end
 
 ---Throws a formatted type error
@@ -79,7 +93,7 @@ local function addTarget(target, options, resource)
     local tableType = table.type(options)
 
     if tableType == 'hash' and options.label then
-        options = { options }
+        options = { options --[[@as TargetOptions]] }
     elseif tableType ~= 'array' then
         typeError('options', 'array', ('%s table'):format(tableType))
     end
